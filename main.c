@@ -16,42 +16,55 @@
 #define USERID 1000
 #define GROUPID 1000
 
-void logprint (const char *message, int error) {
+void logprint(const char *message, int error) {
     // I could open the logfile once and change the buffering to
     // line-buffering, but it would complicate the code a bit. I don't know
     // which method would be techically superiour.
-    const int errorsize = 60;
-    char *errormessage;
+    size_t errorsize = 60;
+    char *errormessage = malloc(sizeof(char) * errorsize);
     FILE *logfile;
+
+    if (error > 0) 
+        strerror_r(error, errormessage, errorsize);
+
+    // do not touch the filesystem as root
+    if (getuid() == 0) {
+        printf("[%d] %s\n", time(NULL), message);
+        if (error > 0) {
+            printf("Error #%d: %s\n", error, errormessage);
+            return;
+        }
+    }
 
     logfile = fopen(LOGFILE, "a");
     //setvbuf(LOGFILE, NULL, _IOLBF, 0); // line buffering
 
     if (logfile == NULL) {
-        printf("Failed to open log file!");
+        printf("Failed to open log file!: %s\n", errno);
         exit(1);
     } 
 
     fprintf(logfile, "[%d] %s\n", time(NULL), message);
     if (error > 0) {
-        strerror_r(errno, errormessage, errorsize);
-        fprintf(logfile, "Error #%d: %s\n", errno, errormessage);
+        fprintf(logfile, "Error #%d: %s\n", error, errormessage);
     }
 
     fclose(logfile);
 }
 
-int handle_request(int sockfd) {
+int handle_request(int sockfd, char *content) {
     char *header = malloc(1024); // FIXME warning, fixed sized buffer
     char *message = malloc(1024*5);
 
+    // I want a way to economize buffer size and ensure no buffer overflows.
     strcpy(header, "HTTP/1.1");
     strcat(header, "200 OK\n");
     strcat(header, "Location: localhost\n");
-    strcat(header, "Content-Type: text/plain;");
+    strcat(header, "Content-Type: text/html;");
     strcat(header, "\n\n");
 
-    message = "I'm a server! Eeek!\n";
+    //message = "I'm a server! Eeek!\n";
+    message = content;
 
     send(sockfd, header, strlen(header), 0);
     send(sockfd, message, strlen(message), 0);
@@ -65,6 +78,10 @@ int main(void) {
     int sockfd, new_fd;
     int program_status = 5;
     int status = 0;
+
+    FILE *mainpage;
+    char *cache_mainpage;
+    long mainpage_filesize;
 
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_UNSPEC;
@@ -112,12 +129,26 @@ int main(void) {
         logprint("Root privileges dropped.", 0);
     }
 
+    // cache pages
+    mainpage = fopen("main.htm", "rb");
+    if (mainpage == NULL) {
+        cache_mainpage = "Server works, but has no data to display.";
+        logprint("No main.htm found, using default content.\n", 0);
+    } else {
+        fseek(mainpage, 0, SEEK_END);
+        mainpage_filesize = ftell(mainpage);
+        rewind(mainpage);
+        cache_mainpage = malloc(mainpage_filesize * (sizeof(char)));
+        fread(cache_mainpage, sizeof(char), mainpage_filesize, mainpage);
+        fclose(mainpage);
+    }
+
     // accept connection
     while (program_status >= 1) {
         addr_size = sizeof remote_address;
         new_fd = accept(sockfd, (struct sockaddr *) &remote_address, &addr_size);
 
-        handle_request(new_fd);
+        handle_request(new_fd, cache_mainpage);
 
         close(new_fd);
     }
