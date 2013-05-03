@@ -1,0 +1,17 @@
+weehttpd HTTP Server
+
+A very basic HTTP server. 
+
+Objectives:
+- Fast
+- Fault-tolorant
+- Secure
+- Code that is easy to understand and modify
+
+Compromises:
+- Pages are cached on startup only, no files are served directly
+- Designed to serve small amounts of HTML. 
+- Very minimal HTTP 1.1 compliance 
+
+I'm not sure how I want to handle images yet. I think I would like 
+to cache all required images on startup and never touch the filesystem again.
