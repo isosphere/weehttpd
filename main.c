@@ -11,7 +11,8 @@
 
 #define LISTENPORT "http"
 #define LOGFILE "weehttpd.log"
-#define QUEUE 10
+#define QUEUE 10 // arbitrary selection
+#define LONGESTERRORMESSAGE 60 // in glibc-2.7 the longest error is 50 chars. I still don't like this.
 
 #define USERID 1000
 #define GROUPID 1000
@@ -20,7 +21,7 @@ void logprint(const char *message, int error) {
     // I could open the logfile once and change the buffering to
     // line-buffering, but it would complicate the code a bit. I don't know
     // which method would be techically superiour.
-    size_t errorsize = 60;
+    size_t errorsize = LONGESTERRORMESSAGE;
     char *errormessage = malloc(sizeof(char) * errorsize);
     FILE *logfile;
 
@@ -32,45 +33,30 @@ void logprint(const char *message, int error) {
         printf("[%d] %s\n", time(NULL), message);
         if (error > 0) {
             printf("Error #%d: %s\n", error, errormessage);
-            return;
         }
+    } else {
+        logfile = fopen(LOGFILE, "a");
+        //setvbuf(LOGFILE, NULL, _IOLBF, 0); // line buffering
+
+        if (logfile == NULL) {
+            printf("Failed to open log file!: %d\n", errno);
+            exit(1);
+        } 
+
+        fprintf(logfile, "[%d] %s\n", time(NULL), message);
+        if (error > 0)
+            fprintf(logfile, "Error #%d: %s\n", error, errormessage);
+
+        fclose(logfile);
     }
-
-    logfile = fopen(LOGFILE, "a");
-    //setvbuf(LOGFILE, NULL, _IOLBF, 0); // line buffering
-
-    if (logfile == NULL) {
-        printf("Failed to open log file!: %s\n", errno);
-        exit(1);
-    } 
-
-    fprintf(logfile, "[%d] %s\n", time(NULL), message);
-    if (error > 0) {
-        fprintf(logfile, "Error #%d: %s\n", error, errormessage);
-    }
-
-    fclose(logfile);
 }
 
-int handle_request(int sockfd, char *content) {
-    char *header = malloc(1024); // FIXME warning, fixed sized buffer
-    char *message = malloc(1024*5);
-
-    // I want a way to economize buffer size and ensure no buffer overflows.
-    strcpy(header, "HTTP/1.1");
-    strcat(header, "200 OK\n");
-    strcat(header, "Location: localhost\n");
-    strcat(header, "Content-Type: text/html;");
-    strcat(header, "\n\n");
-
-    //message = "I'm a server! Eeek!\n";
-    message = content;
-
+int handle_request(int sockfd, char *header, char *content) {
     send(sockfd, header, strlen(header), 0);
-    send(sockfd, message, strlen(message), 0);
+    send(sockfd, content, strlen(content), 0);
 }
 
-int main(void) {
+void main() {
     struct sockaddr_storage remote_address;
     socklen_t addr_size;
     struct addrinfo hints, *res;
@@ -81,6 +67,7 @@ int main(void) {
 
     FILE *mainpage;
     char *cache_mainpage;
+    char *header = malloc(1024);
     long mainpage_filesize;
 
     memset(&hints, 0, sizeof hints);
@@ -129,7 +116,13 @@ int main(void) {
         logprint("Root privileges dropped.", 0);
     }
 
-    // cache pages
+    // cache headers, pages
+    strcpy(header, "HTTP/1.1 ");
+    strcat(header, "200 OK\n");
+    strcat(header, "Location: localhost\n");
+    strcat(header, "Content-Type: text/html;");
+    strcat(header, "\n\n");
+
     mainpage = fopen("main.htm", "rb");
     if (mainpage == NULL) {
         cache_mainpage = "Server works, but has no data to display.";
@@ -148,13 +141,11 @@ int main(void) {
         addr_size = sizeof remote_address;
         new_fd = accept(sockfd, (struct sockaddr *) &remote_address, &addr_size);
 
-        handle_request(new_fd, cache_mainpage);
+        handle_request(new_fd, header, cache_mainpage);
 
         close(new_fd);
     }
 
     logprint("Program ended and logfile closed.", errno);
     close(sockfd);
-
-    return 0;
 }
