@@ -24,6 +24,8 @@ struct cached_file {
     char *alias;
     char *data;
     long size;
+    char *sizestring;
+    int sizelength;
 };
 
 struct cached_file loadfile(const char *path, const char *alias) {
@@ -45,6 +47,15 @@ struct cached_file loadfile(const char *path, const char *alias) {
         result.data = malloc(result.size * (sizeof(char)));
         fread(result.data, sizeof(char), result.size, fhandle);
         fclose(fhandle);
+        
+        // magic to convert long to string without buffer overflows
+        result.sizelength = snprintf(NULL, 0, "%lu", result.size);
+        char sizestring[result.sizelength+1];
+        int c = snprintf(sizestring, result.sizelength+1, "%lu", result.size);
+
+
+        result.sizestring = malloc(result.sizelength);
+        strcpy(result.sizestring, sizestring);
     }
 
     return result;
@@ -85,6 +96,9 @@ void logprint(const char *message, int error) {
 }
 
 int handle_request(int sockfd, char *header, struct cached_file content) {
+    strcat(header, "Content-Length: ");
+    strcat(header, content.sizestring);
+    strcat(header, "\n\n");
     send(sockfd, header, strlen(header), 0);
     send(sockfd, content.data, content.size, 0);
 }
@@ -157,9 +171,7 @@ void main() {
     //strcat(header, "200 OK\n");
     strcpy(header, "200 OK\n");
     strcat(header, "Location: localhost\n");
-    strcat(header, "Content-Type: text/html;");
-    strcat(header, "\n\n");
-
+    strcat(header, "Content-Type: text/html\n");
 
     // built in pages
     filenotfound.alias = "Not found.";
@@ -177,13 +189,13 @@ void main() {
         addr_size = sizeof remote_address;
         new_fd = accept(sockfd, (struct sockaddr *) &remote_address, &addr_size);
 
-        send(new_fd, "HTTP/1.1\n", 9, 0);
-
         // interpret request - what do they want?
         recv(new_fd, recv_buffer, BUFFERSIZE, 0);
         if (strncmp("GET ", recv_buffer, 4) == 0) {
             printf("A GET request!\n");
         }
+
+        send(new_fd, "HTTP/1.1 ", 9, 0);
 
         // respond to request - what will we give them?
         handle_request(new_fd, header, storage[0]);
