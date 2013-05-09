@@ -96,10 +96,9 @@ void logprint(const char *message, int error) {
 }
 
 int handle_request(int sockfd, char *header, struct cached_file content) {
-    strcat(header, "Content-Length: ");
-    strcat(header, content.sizestring);
-    strcat(header, "\n\n");
     send(sockfd, header, strlen(header), 0);
+    send(sockfd, content.sizestring, content.sizelength, 0);
+    send(sockfd, "\n\n", 2, 0);
     send(sockfd, content.data, content.size, 0);
 }
 
@@ -172,6 +171,7 @@ void main() {
     strcpy(header, "200 OK\n");
     strcat(header, "Location: localhost\n");
     strcat(header, "Content-Type: text/html\n");
+    strcat(header, "Content-Length: ");
 
     // built in pages
     filenotfound.alias = "Not found.";
