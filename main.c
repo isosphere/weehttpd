@@ -118,7 +118,9 @@ void main() {
     int loaded_files = 0;
 
     char recv_buffer[BUFFERSIZE];
-    
+
+    char *request;
+
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
@@ -190,16 +192,25 @@ void main() {
         new_fd = accept(sockfd, (struct sockaddr *) &remote_address, &addr_size);
 
         // interpret request - what do they want?
-        recv(new_fd, recv_buffer, BUFFERSIZE, 0);
-        if (strncmp("GET ", recv_buffer, 4) == 0) {
-            printf("A GET request!\n");
+        status = recv(new_fd, recv_buffer, BUFFERSIZE, 0);
+
+        if (status <= 0) {
+            logprint("Client sent no request, closing socket.", errno);
+        } else {
+            if (strncmp("GET ", recv_buffer, 4) == 0) {
+                printf("A GET request!\n");
+
+            }
+
+            while (status = recv(new_fd, recv_buffer, 1, MSG_DONTWAIT) > 0) {
+                // ignore the rest of the request because we are very rude
+            }
+
+            send(new_fd, "HTTP/1.1 ", 9, 0);
+
+            // respond to request - what will we give them?
+            handle_request(new_fd, header, storage[0]);
         }
-
-        send(new_fd, "HTTP/1.1 ", 9, 0);
-
-        // respond to request - what will we give them?
-        handle_request(new_fd, header, storage[0]);
-
         close(new_fd);
     }
 
