@@ -34,7 +34,7 @@ struct cached_file loadfile(const char *path, const char *alias) {
     struct cached_file result;
     FILE *fhandle;
 
-    result.alias = malloc(strlen(alias));
+    result.alias = malloc(sizeof(char)*strlen(alias));
     strcpy(result.alias, alias);
     
     fhandle = fopen(path, "rb");
@@ -45,7 +45,7 @@ struct cached_file loadfile(const char *path, const char *alias) {
         fseek(fhandle, 0, SEEK_END);
         result.size = ftell(fhandle);
         rewind(fhandle);
-        result.data = malloc(result.size * (sizeof(char)));
+        result.data = malloc(sizeof(char)*result.size);
         fread(result.data, sizeof(char), result.size, fhandle);
         fclose(fhandle);
         
@@ -54,7 +54,7 @@ struct cached_file loadfile(const char *path, const char *alias) {
         char sizestring[result.sizelength+1];
         int c = snprintf(sizestring, result.sizelength+1, "%lu", result.size);
 
-        result.sizestring = malloc(result.sizelength);
+        result.sizestring = malloc(sizeof(char)*result.sizelength);
         strcpy(result.sizestring, sizestring);
 
         result.statuscode = "200 OK";
@@ -150,7 +150,7 @@ void main() {
 
     // Cache
     int loaded_files = 0;
-    char *header = malloc(1024);
+    char *header = malloc(sizeof(char)*1024);
     struct cached_file *storage;
     struct cached_file served_file;
 
@@ -177,12 +177,12 @@ void main() {
 
     const char *logfilepath;
     config_lookup_string(&cfg, "logfile", &logfilepath); 
-    logfile = malloc(strlen(logfilepath));
+    logfile = malloc(sizeof(char)*strlen(logfilepath));
     strcpy(logfile, logfilepath);
 
     const char *listenporttemp;
     config_lookup_string(&cfg, "port", &listenporttemp);
-    listenport = malloc(strlen(listenporttemp));
+    listenport = malloc(sizeof(char)*strlen(listenporttemp));
     strcpy(listenport, listenporttemp);
 
     config_lookup_int(&cfg, "buffersize", &buffersize);
@@ -290,7 +290,7 @@ void main() {
         logprint("Root privileges dropped.", 0);
     }
 
-    recv_buffer = malloc(buffersize);
+    recv_buffer = malloc(sizeof(char)*buffersize);
 
     // accept connection
     while (program_status >= 1) {
@@ -318,11 +318,11 @@ void main() {
                 } else {
                     pcre_get_substring(recv_buffer, subStrings, pcreExecRet, 1, &psubStrMatchStr);
 
-                    cacherequest = malloc(strlen(psubStrMatchStr));
+                    cacherequest = malloc(sizeof(char)*strlen(psubStrMatchStr));
                     strcpy(cacherequest, psubStrMatchStr);
 
                     if (strcmp("", cacherequest) == 0) {
-                        cacherequest = malloc(strlen("index"));
+                        cacherequest = malloc(sizeof(char)*strlen("index"));
                         strcpy(cacherequest, "index");
                     }
 
