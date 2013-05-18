@@ -1,9 +1,8 @@
 NAME=weehttpd
 
 all:
-	gcc -o ${NAME} main.c
+	gcc -o ${NAME} -l pcre main.c
 debug:
-	gcc -ggdb -o ${NAME}-debug main.c
+	gcc -ggdb -o ${NAME}-debug -l pcre main.c
 test:
-	nc 127.0.0.1 80
-	wbox http://localhost 10 wait 0
+	nc localhost 8080
