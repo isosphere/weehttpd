@@ -13,18 +13,12 @@
 
 // Extra
 #include <pcre.h>
+#include <libconfig.h>
 
 // Configuration
-#define LISTENPORT "8080"
-#define LOGFILE "weehttpd.log"
-#define QUEUE 10 // arbitrary selection
 #define LONGESTERRORMESSAGE 60 // in glibc-2.7 the longest error is 50 chars. I still don't like this.
 
-#define USERID 1000
-#define GROUPID 1000
-
-#define MAXFILES 20
-#define BUFFERSIZE 100
+char *logfile;
 
 struct cached_file {
     char *alias;
@@ -75,7 +69,7 @@ void logprint(const char *message, int error) {
     // which method would be techically superiour.
     size_t errorsize = LONGESTERRORMESSAGE;
     char *errormessage = malloc(sizeof(char) * errorsize);
-    FILE *logfile;
+    FILE *logfileh;
 
     if (error > 0) 
         strerror_r(error, errormessage, errorsize);
@@ -83,23 +77,22 @@ void logprint(const char *message, int error) {
     // do not touch the filesystem as root
     if (getuid() == 0) {
         printf("[%d] %s\n", time(NULL), message);
-        if (error > 0) {
+        if (error > 0)
             printf("Error #%d: %s\n", error, errormessage);
-        }
     } else {
-        logfile = fopen(LOGFILE, "a");
+        logfileh = fopen(logfile, "a");
         //setvbuf(LOGFILE, NULL, _IOLBF, 0); // line buffering
 
-        if (logfile == NULL) {
+        if (logfileh == NULL) {
             printf("Failed to open log file!: %d\n", errno);
             exit(1);
         } 
 
-        fprintf(logfile, "[%d] %s\n", time(NULL), message);
+        fprintf(logfileh, "[%d] %s\n", time(NULL), message);
         if (error > 0)
-            fprintf(logfile, "Error #%d: %s\n", error, errormessage);
+            fprintf(logfileh, "Error #%d: %s\n", error, errormessage);
 
-        fclose(logfile);
+        fclose(logfileh);
     }
 }
 
@@ -143,11 +136,22 @@ void main() {
     int i, status;
     int yes = 1;
     int program_status = 1;
+    
+    // Config
+    config_t cfg;
+    config_setting_t *setting;
+    const char *configbuffer;
+
+    config_init(&cfg);
+
+    // System
+    int userid = 1000;
+    int groupid = 1000;
 
     // Cache
     int loaded_files = 0;
     char *header = malloc(1024);
-    struct cached_file storage[MAXFILES];
+    struct cached_file *storage;
     struct cached_file served_file;
 
     // Networking
@@ -155,10 +159,64 @@ void main() {
     socklen_t addr_size;
     struct addrinfo hints, *res;
     int sockfd, new_fd;
-    char *recv_buffer = malloc(BUFFERSIZE);
+    char *recv_buffer;
+
+    char *listenport;
+    int buffersize;
+    int queue;
 
     char *request;      // The entire request from the user
     char *cacherequest; // The requested URI, so long as it's [a-z0-9.-_]
+
+    // Load configuration
+    if (! config_read_file(&cfg, "weehttpd.cfg")) {
+        printf("%s\n", config_error_text(&cfg));
+        config_destroy(&cfg);
+        exit(1);
+    }
+
+    const char *logfilepath;
+    config_lookup_string(&cfg, "logfile", &logfilepath); 
+    logfile = malloc(strlen(logfilepath));
+    strcpy(logfile, logfilepath);
+
+    const char *listenporttemp;
+    config_lookup_string(&cfg, "port", &listenporttemp);
+    listenport = malloc(strlen(listenporttemp));
+    strcpy(listenport, listenporttemp);
+
+    config_lookup_int(&cfg, "buffersize", &buffersize);
+    config_lookup_int(&cfg, "queue", &queue);
+
+    setting = config_lookup(&cfg, "files");
+    if (setting != NULL) {
+        int count = config_setting_length(setting);
+        storage = malloc(sizeof(struct cached_file)*count);
+
+        for (i = 0; i < count; ++i) {
+            config_setting_t *filedef = config_setting_get_elem(setting, i);
+
+            const char *alias, *path, *statuscode, *contenttype;
+
+            if (! (config_setting_lookup_string(filedef, "path", &path) && 
+                   config_setting_lookup_string(filedef, "alias", &alias)))
+                continue; // path and alias are mandatory
+
+            if (!config_setting_lookup_string(filedef, "statuscode", &statuscode))
+                statuscode = "200 OK";
+
+            if (!config_setting_lookup_string(filedef, "contenttype", &contenttype))
+                contenttype = "text/plain";
+
+            storage[i] = loadfile(path, alias);
+            storage[i].contenttype = malloc(sizeof(contenttype));
+            strcpy(storage[i].contenttype, contenttype);
+            storage[i].statuscode = malloc(sizeof(statuscode));
+            strcpy(storage[i].statuscode, statuscode);
+            loaded_files++;
+        }
+    }
+    config_destroy(&cfg);
 
     // Perl-compatible Regex
     pcre *reCompiled;
@@ -188,7 +246,7 @@ void main() {
 
     logprint("Program started.", 0);
 
-    status = getaddrinfo(NULL, LISTENPORT, &hints, &res);
+    status = getaddrinfo(NULL, listenport, &hints, &res);
     if (status != 0) {
         logprint(gai_strerror(status), errno);
         exit(1);
@@ -210,7 +268,7 @@ void main() {
         exit(1);
     }
     
-    if (listen(sockfd, QUEUE) != 0) {
+    if (listen(sockfd, queue) != 0) {
         logprint("Failed to listen for connections.", errno);
         exit(1);
     }
@@ -219,12 +277,12 @@ void main() {
     if (getuid() == 0) {
         logprint("Root privileges detected. Dropping.", 0);
 
-        if (setgid(GROUPID) != 0) {
+        if (setgid(groupid) != 0) {
             logprint("setgid: Failed to drop group privileges.", errno);
             exit(1);
         }
 
-        if (setuid(USERID) != 0) {
+        if (setuid(userid) != 0) {
             logprint("setuid: Failed to drop user privileges.", errno);
             exit(1);
         }
@@ -232,18 +290,7 @@ void main() {
         logprint("Root privileges dropped.", 0);
     }
 
-    storage[0] = loadfile("files/404.htm", "404");
-    storage[0].contenttype = "text/html";
-    storage[0].statuscode = "404 Not Found";
-    loaded_files++;
-
-    storage[1] = loadfile("files/index.htm", "index");
-    storage[1].contenttype = "text/html";
-    loaded_files++;
-
-    storage[2] = loadfile("files/image.jpg", "image.jpg");
-    storage[2].contenttype = "image/jpeg";
-    loaded_files++;
+    recv_buffer = malloc(buffersize);
 
     // accept connection
     while (program_status >= 1) {
@@ -251,8 +298,8 @@ void main() {
         new_fd = accept(sockfd, (struct sockaddr *) &remote_address, &addr_size);
 
         // interpret request - what do they want?
-        memset(recv_buffer, 0, BUFFERSIZE);
-        status = recv(new_fd, recv_buffer, BUFFERSIZE, 0);
+        memset(recv_buffer, 0, buffersize);
+        status = recv(new_fd, recv_buffer, buffersize, 0);
 
         if (status <= 0) {
             logprint("Client sent no request, closing socket.", errno);
@@ -263,7 +310,7 @@ void main() {
 
                 // "Validate" the request - our implementation is not standard,
                 // it's crippled
-                pcreExecRet = pcre_exec(reCompiled, pcreExtra, recv_buffer, BUFFERSIZE, 0, PCRE_NEWLINE_ANY, subStrings, 10);
+                pcreExecRet = pcre_exec(reCompiled, pcreExtra, recv_buffer, buffersize, 0, PCRE_NEWLINE_ANY, subStrings, 10);
                 
                 if (pcreExecRet < 0) {
                     // doesn't validate
