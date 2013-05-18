@@ -3,10 +3,10 @@ weehttpd HTTP Server
 A very basic HTTP server. In use at http://weeoak.com
 
 Objectives:
+- Simple
 - Fast
 - Fault-tolorant
 - Secure
-- Code that is easy to understand and modify
 
 Compromises:
 - All files are cached to memory on startup only, no files are served directly from the file system
