@@ -328,6 +328,8 @@ void main() {
 
                     printf("Request: '%s'\n", cacherequest);
                 }
+            } else {
+                cacherequest = "404"; // change to invalid request
             }
 
             while (status = recv(new_fd, recv_buffer, 1, MSG_DONTWAIT) > 0) {
