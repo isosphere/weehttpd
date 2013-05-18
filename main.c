@@ -1,16 +1,20 @@
+// Basic
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
+// Net
 #include <netdb.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 
+// Extra
 #include <pcre.h>
 
+// Configuration
 #define LISTENPORT "8080"
 #define LOGFILE "weehttpd.log"
 #define QUEUE 10 // arbitrary selection
@@ -24,11 +28,12 @@
 
 struct cached_file {
     char *alias;
-    char *data;
-    long size;
-    char *sizestring;
-    int sizelength;
     char *contenttype;
+    char *data;
+    char *sizestring;
+    char *statuscode;
+    int sizelength;
+    long size;
 };
 
 struct cached_file loadfile(const char *path, const char *alias) {
@@ -57,6 +62,8 @@ struct cached_file loadfile(const char *path, const char *alias) {
 
         result.sizestring = malloc(result.sizelength);
         strcpy(result.sizestring, sizestring);
+
+        result.statuscode = "200 OK";
     }
 
     return result;
@@ -122,9 +129,9 @@ void catch_regex_error(int error_number) {
     }
 }
 
-int handle_request(int sockfd, char *header, struct cached_file content) {
-    send(sockfd, header, strlen(header), 0);
-    send(sockfd, "Content-Type: ", strlen("Content-Type: "), 0);
+int handle_request(int sockfd, struct cached_file content) {
+    send(sockfd, content.statuscode, strlen(content.statuscode), 0);
+    send(sockfd, "\nContent-Type: ", strlen("Content-Type: "), 0);
     send(sockfd, content.contenttype, strlen(content.contenttype), 0);
     send(sockfd, "\nContent-Length: ", strlen("Content-Length: "), 0);
     send(sockfd, content.sizestring, content.sizelength, 0);
@@ -133,28 +140,27 @@ int handle_request(int sockfd, char *header, struct cached_file content) {
 }
 
 void main() {
+    int i, status;
+    int yes = 1;
+    int program_status = 1;
+
+    // Cache
+    int loaded_files = 0;
+    char *header = malloc(1024);
+    struct cached_file storage[MAXFILES];
+    struct cached_file served_file;
+
+    // Networking
     struct sockaddr_storage remote_address;
     socklen_t addr_size;
     struct addrinfo hints, *res;
-
-    int i;
-    int yes = 1;
-
     int sockfd, new_fd;
-    int program_status = 5;
-    int status = 0;
-
-    char *header = malloc(1024);
-
-    struct cached_file storage[MAXFILES];
-    struct cached_file served_file;
-    int loaded_files = 0;
-
     char *recv_buffer = malloc(BUFFERSIZE);
 
-    char *request;
-    char *cacherequest;
+    char *request;      // The entire request from the user
+    char *cacherequest; // The requested URI, so long as it's [a-z0-9.-_]
 
+    // Perl-compatible Regex
     pcre *reCompiled;
     pcre_extra *pcreExtra;
     const char *pcreErrorStr;
@@ -167,6 +173,12 @@ void main() {
     // My implementation of request URIs is not to standard
     RequestMatchRegex = "^GET /([a-zA-Z0-9.\\-_]*) HTTP/\\d\\.\\d$";
     reCompiled = pcre_compile(RequestMatchRegex, PCRE_MULTILINE, &pcreErrorStr, &pcreErrorOffset, NULL);
+    
+    if (reCompiled == NULL) {
+        logprint("Failed to compile request regex.", 0);
+        exit(1);
+    }
+
     pcreExtra = pcre_study(reCompiled, 0, &pcreErrorStr);
 
     memset(&hints, 0, sizeof hints);
@@ -220,12 +232,9 @@ void main() {
         logprint("Root privileges dropped.", 0);
     }
 
-    // cache headers, pages
-    strcpy(header, "200 OK\n");
-    strcat(header, "Location: localhost\n");
-
     storage[0] = loadfile("files/404.htm", "404");
     storage[0].contenttype = "text/html";
+    storage[0].statuscode = "404 Not Found";
     loaded_files++;
 
     storage[1] = loadfile("files/index.htm", "index");
@@ -290,7 +299,7 @@ void main() {
                     served_file = storage[i];
                 }
             }
-            handle_request(new_fd, header, served_file);
+            handle_request(new_fd, served_file);
         }
         close(new_fd);
     }
