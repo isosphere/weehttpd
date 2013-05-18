@@ -209,9 +209,9 @@ void main() {
                 contenttype = "text/plain";
 
             storage[i] = loadfile(path, alias);
-            storage[i].contenttype = malloc(sizeof(contenttype)+1);
+            storage[i].contenttype = malloc(sizeof(char)*strlen(contenttype));
             strcpy(storage[i].contenttype, contenttype);
-            storage[i].statuscode = malloc(sizeof(statuscode)+1);
+            storage[i].statuscode = malloc(sizeof(char)*strlen(statuscode));
             strcpy(storage[i].statuscode, statuscode);
             loaded_files++;
         }
