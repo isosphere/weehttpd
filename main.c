@@ -34,7 +34,7 @@ struct cached_file loadfile(const char *path, const char *alias) {
     struct cached_file result;
     FILE *fhandle;
 
-    result.alias = malloc(sizeof(char)*strlen(alias));
+    result.alias = malloc(sizeof(char)*strlen(alias)+1);
     strcpy(result.alias, alias);
     
     fhandle = fopen(path, "rb");
@@ -45,7 +45,7 @@ struct cached_file loadfile(const char *path, const char *alias) {
         fseek(fhandle, 0, SEEK_END);
         result.size = ftell(fhandle);
         rewind(fhandle);
-        result.data = malloc(sizeof(char)*result.size);
+        result.data = malloc(sizeof(char)*result.size+1);
         fread(result.data, sizeof(char), result.size, fhandle);
         fclose(fhandle);
         
@@ -54,7 +54,7 @@ struct cached_file loadfile(const char *path, const char *alias) {
         char sizestring[result.sizelength+1];
         int c = snprintf(sizestring, result.sizelength+1, "%lu", result.size);
 
-        result.sizestring = malloc(sizeof(char)*result.sizelength);
+        result.sizestring = malloc(sizeof(char)*result.sizelength+1);
         strcpy(result.sizestring, sizestring);
 
         result.statuscode = "200 OK";
@@ -68,7 +68,7 @@ void logprint(const char *message, int error) {
     // line-buffering, but it would complicate the code a bit. I don't know
     // which method would be techically superiour.
     size_t errorsize = LONGESTERRORMESSAGE;
-    char *errormessage = malloc(sizeof(char) * errorsize);
+    char *errormessage = malloc(sizeof(char) * errorsize+1);
     FILE *logfileh;
 
     if (error > 0) 
@@ -150,7 +150,7 @@ void main() {
 
     // Cache
     int loaded_files = 0;
-    char *header = malloc(sizeof(char)*1024);
+    char *header = malloc(sizeof(char)*1024+1);
     struct cached_file *storage;
     struct cached_file served_file;
 
@@ -177,12 +177,12 @@ void main() {
 
     const char *logfilepath;
     config_lookup_string(&cfg, "logfile", &logfilepath); 
-    logfile = malloc(sizeof(char)*strlen(logfilepath));
+    logfile = malloc(sizeof(char)*strlen(logfilepath)+1);
     strcpy(logfile, logfilepath);
 
     const char *listenporttemp;
     config_lookup_string(&cfg, "port", &listenporttemp);
-    listenport = malloc(sizeof(char)*strlen(listenporttemp));
+    listenport = malloc(sizeof(char)*strlen(listenporttemp)+1);
     strcpy(listenport, listenporttemp);
 
     config_lookup_int(&cfg, "buffersize", &buffersize);
@@ -191,7 +191,7 @@ void main() {
     setting = config_lookup(&cfg, "files");
     if (setting != NULL) {
         int count = config_setting_length(setting);
-        storage = malloc(sizeof(struct cached_file)*count);
+        storage = malloc(sizeof(struct cached_file)*count+1);
 
         for (i = 0; i < count; ++i) {
             config_setting_t *filedef = config_setting_get_elem(setting, i);
@@ -209,9 +209,9 @@ void main() {
                 contenttype = "text/plain";
 
             storage[i] = loadfile(path, alias);
-            storage[i].contenttype = malloc(sizeof(contenttype));
+            storage[i].contenttype = malloc(sizeof(contenttype)+1);
             strcpy(storage[i].contenttype, contenttype);
-            storage[i].statuscode = malloc(sizeof(statuscode));
+            storage[i].statuscode = malloc(sizeof(statuscode)+1);
             strcpy(storage[i].statuscode, statuscode);
             loaded_files++;
         }
@@ -290,7 +290,7 @@ void main() {
         logprint("Root privileges dropped.", 0);
     }
 
-    recv_buffer = malloc(sizeof(char)*buffersize);
+    recv_buffer = malloc(sizeof(char)*buffersize+1);
 
     // accept connection
     while (program_status >= 1) {
@@ -318,11 +318,11 @@ void main() {
                 } else {
                     pcre_get_substring(recv_buffer, subStrings, pcreExecRet, 1, &psubStrMatchStr);
 
-                    cacherequest = malloc(sizeof(char)*strlen(psubStrMatchStr));
+                    cacherequest = malloc(sizeof(char)*strlen(psubStrMatchStr)+1);
                     strcpy(cacherequest, psubStrMatchStr);
 
                     if (strcmp("", cacherequest) == 0) {
-                        cacherequest = malloc(sizeof(char)*strlen("index"));
+                        cacherequest = malloc(sizeof(char)*strlen("index")+1);
                         strcpy(cacherequest, "index");
                     }
 
