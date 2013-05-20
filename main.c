@@ -324,7 +324,9 @@ void main() {
                     pcre_free_substring(psubStrMatchStr);
 
                     if (strcmp("", cacherequest) == 0) {
-                        cacherequest = "index";
+                        free(cacherequest);
+                        cacherequest = malloc(sizeof(char)*strlen("index")+1);
+                        strcpy(cacherequest, "index");
                     }
 
                     printf("Request: '%s'\n", cacherequest);
