@@ -12,3 +12,7 @@ Compromises:
 - All files are cached to memory on startup only, no files are served directly from the file system
 - Designed to serve small static websites
 - Very minimal HTTP 1.1 compliance, probably not standards-compliant
+
+Dependencies:
+- libconfig
+- pcre
