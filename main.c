@@ -18,6 +18,9 @@
 // Configuration
 #define LONGESTERRORMESSAGE 60 // in glibc-2.7 the longest error is 50 chars. I still don't like this.
 
+// Macros
+#define CSEND(MESSAGE)  send(sockfd, MESSAGE, strlen(MESSAGE), 0)
+
 char *logfile;
 
 struct cached_file {
@@ -123,13 +126,13 @@ void catch_regex_error(int error_number) {
 }
 
 int handle_request(int sockfd, struct cached_file content) {
-    send(sockfd, content.statuscode, strlen(content.statuscode), 0);
-    send(sockfd, "\nContent-Type: ", strlen("Content-Type: "), 0);
-    send(sockfd, content.contenttype, strlen(content.contenttype), 0);
-    send(sockfd, "\nContent-Length: ", strlen("Content-Length: "), 0);
-    send(sockfd, content.sizestring, content.sizelength, 0);
-    send(sockfd, "\n\n", 2, 0);
-    send(sockfd, content.data, content.size, 0);
+    CSEND(content.statuscode);
+    CSEND("\nContent-Type: ");
+    CSEND(content.contenttype);
+    CSEND("\nContent-Length: ");
+    CSEND(content.sizestring);
+    CSEND("\n\n");
+    CSEND(content.data);
 }
 
 void main() {
@@ -150,7 +153,6 @@ void main() {
 
     // Cache
     int loaded_files = 0;
-    char *header = malloc(sizeof(char)*1024+1);
     struct cached_file *storage;
     struct cached_file served_file;
 
@@ -315,6 +317,7 @@ void main() {
                 if (pcreExecRet < 0) {
                     // doesn't validate
                     catch_regex_error(pcreExecRet);
+                    cacherequest = "400";
                 } else {
                     pcre_get_substring(recv_buffer, subStrings, pcreExecRet, 1, &psubStrMatchStr);
 
