@@ -2,3 +2,4 @@ weehttpd
 weehttpd-debug
 weehttpd.log
 files/*
+*.swp
