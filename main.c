@@ -356,7 +356,6 @@ void main() {
             handle_request(new_fd, served_file);
         }
         close(new_fd);
-        program_status--;
     }
     close(sockfd);
 
