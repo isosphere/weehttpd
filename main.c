@@ -19,7 +19,7 @@
 #define LONGESTERRORMESSAGE 60 // in glibc-2.7 the longest error is 50 chars. I still don't like this.
 
 // Macros
-#define CSEND(MESSAGE)  send(sockfd, MESSAGE, strlen(MESSAGE), 0)
+#define SEND(MESSAGE)  send(sockfd, MESSAGE, strlen(MESSAGE), 0)
 
 char *logfile;
 
@@ -48,7 +48,7 @@ struct cached_file loadfile(const char *path, const char *alias) {
         fseek(fhandle, 0, SEEK_END);
         result.size = ftell(fhandle);
         rewind(fhandle);
-        result.data = malloc(sizeof(char)*result.size+1);
+        result.data = malloc(sizeof(char)*result.size);
         fread(result.data, sizeof(char), result.size, fhandle);
         fclose(fhandle);
         
@@ -126,13 +126,13 @@ void catch_regex_error(int error_number) {
 }
 
 int handle_request(int sockfd, struct cached_file content) {
-    CSEND(content.statuscode);
-    CSEND("\nContent-Type: ");
-    CSEND(content.contenttype);
-    CSEND("\nContent-Length: ");
-    CSEND(content.sizestring);
-    CSEND("\n\n");
-    CSEND(content.data);
+    SEND(content.statuscode);
+    SEND("\nContent-Type: ");
+    SEND(content.contenttype);
+    SEND("\nContent-Length: ");
+    SEND(content.sizestring);
+    SEND("\n\n");
+    send(sockfd, content.data, content.size, 0);
 }
 
 void main() {
