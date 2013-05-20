@@ -33,39 +33,6 @@ struct cached_file {
     long size;
 };
 
-struct cached_file loadfile(const char *path, const char *alias) {
-    struct cached_file result;
-    FILE *fhandle;
-
-    result.alias = malloc(sizeof(char)*strlen(alias)+1);
-    strcpy(result.alias, alias);
-    
-    fhandle = fopen(path, "rb");
-    if (fhandle == NULL) {
-        result.data = "";
-        result.size = 0;
-    } else {
-        fseek(fhandle, 0, SEEK_END);
-        result.size = ftell(fhandle);
-        rewind(fhandle);
-        result.data = malloc(sizeof(char)*result.size);
-        fread(result.data, sizeof(char), result.size, fhandle);
-        fclose(fhandle);
-        
-        // magic to convert long to string without buffer overflows
-        result.sizelength = snprintf(NULL, 0, "%lu", result.size);
-        char sizestring[result.sizelength+1];
-        int c = snprintf(sizestring, result.sizelength+1, "%lu", result.size);
-
-        result.sizestring = malloc(sizeof(char)*result.sizelength+1);
-        strcpy(result.sizestring, sizestring);
-
-        result.statuscode = "200 OK";
-    }
-
-    return result;
-}
-
 void logprint(const char *message, int error) {
     // I could open the logfile once and change the buffering to
     // line-buffering, but it would complicate the code a bit. I don't know
@@ -73,6 +40,7 @@ void logprint(const char *message, int error) {
     size_t errorsize = LONGESTERRORMESSAGE;
     char *errormessage = malloc(sizeof(char) * errorsize+1);
     FILE *logfileh;
+    extern char *logfile;
 
     if (error > 0) 
         strerror_r(error, errormessage, errorsize);
@@ -97,6 +65,7 @@ void logprint(const char *message, int error) {
 
         fclose(logfileh);
     }
+    free(errormessage);
 }
 
 void catch_regex_error(int error_number) {
@@ -152,6 +121,7 @@ void main() {
     int groupid = 1000;
 
     // Cache
+    FILE *fhandle;
     int loaded_files = 0;
     struct cached_file *storage;
     struct cached_file served_file;
@@ -171,7 +141,7 @@ void main() {
     char *cacherequest; // The requested URI, so long as it's [a-z0-9.-_]
 
     // Load configuration
-    if (! config_read_file(&cfg, "weehttpd.cfg")) {
+    if (!config_read_file(&cfg, "weehttpd.cfg")) {
         printf("%s\n", config_error_text(&cfg));
         config_destroy(&cfg);
         exit(1);
@@ -193,7 +163,7 @@ void main() {
     setting = config_lookup(&cfg, "files");
     if (setting != NULL) {
         int count = config_setting_length(setting);
-        storage = malloc(sizeof(struct cached_file)*count+1);
+        storage = malloc(sizeof(struct cached_file)*count);
 
         for (i = 0; i < count; ++i) {
             config_setting_t *filedef = config_setting_get_elem(setting, i);
@@ -210,7 +180,34 @@ void main() {
             if (!config_setting_lookup_string(filedef, "contenttype", &contenttype))
                 contenttype = "text/plain";
 
-            storage[i] = loadfile(path, alias);
+            //storage[i] = loadfile(path, alias);
+
+            storage[i].alias = malloc(sizeof(char)*strlen(alias)+1);
+            strcpy(storage[i].alias, alias);
+
+            fhandle = fopen(path, "rb");
+            if (fhandle == NULL) {
+                storage[i].data = "";
+                storage[i].size = 0;
+            } else {
+                fseek(fhandle, 0, SEEK_END);
+                storage[i].size = ftell(fhandle);
+                rewind(fhandle);
+                storage[i].data = malloc(sizeof(char)*storage[i].size);
+                fread(storage[i].data, sizeof(char), storage[i].size, fhandle);
+                fclose(fhandle);
+
+                // magic to convert long to string without buffer overflows
+                storage[i].sizelength = snprintf(NULL, 0, "%lu", storage[i].size);
+                char sizestring[storage[i].sizelength+1];
+                int c = snprintf(sizestring, storage[i].sizelength+1, "%lu", storage[i].size);
+
+                storage[i].sizestring = malloc(sizeof(char)*storage[i].sizelength+1);
+                strcpy(storage[i].sizestring, sizestring);
+
+                storage[i].statuscode = "200 OK";
+            }
+
             storage[i].contenttype = malloc(sizeof(char)*strlen(contenttype)+1);
             strcpy(storage[i].contenttype, contenttype);
             storage[i].statuscode = malloc(sizeof(char)*strlen(statuscode)+1);
@@ -292,7 +289,7 @@ void main() {
         logprint("Root privileges dropped.", 0);
     }
 
-    recv_buffer = malloc(sizeof(char)*buffersize+1);
+    recv_buffer = malloc(sizeof(char)*buffersize);
 
     // accept connection
     while (program_status >= 1) {
@@ -307,8 +304,8 @@ void main() {
             logprint("Client sent no request, closing socket.", errno);
         } else {
             if (strncmp("GET ", recv_buffer, 4) == 0) {
-                printf("A GET request!\n");
-                printf("%s\n", recv_buffer);
+                // printf("A GET request!\n");
+                // printf("%s\n", recv_buffer);
 
                 // "Validate" the request - our implementation is not standard,
                 // it's crippled
@@ -317,22 +314,24 @@ void main() {
                 if (pcreExecRet < 0) {
                     // doesn't validate
                     catch_regex_error(pcreExecRet);
-                    cacherequest = "400";
+                    cacherequest = malloc(sizeof(char)*strlen("400")+1);
+                    strcpy(cacherequest, "400");
                 } else {
                     pcre_get_substring(recv_buffer, subStrings, pcreExecRet, 1, &psubStrMatchStr);
 
                     cacherequest = malloc(sizeof(char)*strlen(psubStrMatchStr)+1);
                     strcpy(cacherequest, psubStrMatchStr);
+                    pcre_free_substring(psubStrMatchStr);
 
                     if (strcmp("", cacherequest) == 0) {
-                        cacherequest = malloc(sizeof(char)*strlen("index")+1);
-                        strcpy(cacherequest, "index");
+                        cacherequest = "index";
                     }
 
                     printf("Request: '%s'\n", cacherequest);
                 }
             } else {
-                cacherequest = "400";
+                cacherequest = malloc(sizeof(char)*strlen("400")+1);
+                strcpy(cacherequest, "400");
             }
 
             while (status = recv(new_fd, recv_buffer, 1, MSG_DONTWAIT) > 0) {
@@ -351,11 +350,30 @@ void main() {
                     served_file = storage[i];
                 }
             }
+            free(cacherequest);
             handle_request(new_fd, served_file);
         }
         close(new_fd);
+        program_status--;
     }
-
-    logprint("Program ended and logfile closed.", errno);
     close(sockfd);
+
+    free(recv_buffer);
+    free(listenport);
+    freeaddrinfo(res);
+
+    logprint("Program shutdown.", errno);
+    free(logfile);
+
+    pcre_free(reCompiled);
+    pcre_free(pcreExtra);
+
+    for (i = 0; i < loaded_files; i++) {
+        free(storage[i].contenttype);
+        free(storage[i].statuscode);
+        free(storage[i].sizestring);
+        free(storage[i].data);
+        free(storage[i].alias);
+    }
+    free(storage);
 }
