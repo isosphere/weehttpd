@@ -187,8 +187,9 @@ void main() {
 
             fhandle = fopen(path, "rb");
             if (fhandle == NULL) {
-                storage[i].data = "";
-                storage[i].size = 0;
+                logprint(alias, 0);
+                logprint("Failed to open file referenced in config file", errno);
+                exit(1);
             } else {
                 fseek(fhandle, 0, SEEK_END);
                 storage[i].size = ftell(fhandle);
