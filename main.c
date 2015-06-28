@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 // Net
 #include <netdb.h>
@@ -305,9 +306,6 @@ void main() {
 			logprint("Client sent no request, closing socket.", errno);
 		} else {
 			if (strncmp("GET ", recv_buffer, 4) == 0) {
-				// printf("A GET request!\n");
-				// printf("%s\n", recv_buffer);
-
 				// "Validate" the request - our implementation is not standard,
 				// it's crippled
 				pcreExecRet = pcre_exec(reCompiled, pcreExtra, recv_buffer, buffersize, 0, PCRE_NEWLINE_ANY, subStrings, 10);
