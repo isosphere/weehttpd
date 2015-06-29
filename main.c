@@ -274,6 +274,8 @@ void main() {
 		exit(1);
 	}
 
+	logprint("Listening for connections.", 0);
+
 	// drop privileges
 	if (getuid() == 0) {
 		logprint("Root privileges detected. Dropping.", 0);
@@ -302,16 +304,22 @@ void main() {
 		memset(recv_buffer, 0, buffersize);
 		status = recv(new_fd, recv_buffer, buffersize, 0);
 
-		if (status <= 0) {
-			logprint("Client sent no request, closing socket.", errno);
+		if (status < 0) {
+			logprint("Socket error, closing socket.", errno);
+		} else if (status == 0) {
+			logprint("Client sent no request, closing socket.", 0);
 		} else {
 			if (strncmp("GET ", recv_buffer, 4) == 0) {
+				logprint("Recieved a GET request.", 0);
+
 				// "Validate" the request - our implementation is not standard,
 				// it's crippled
 				pcreExecRet = pcre_exec(reCompiled, pcreExtra, recv_buffer, buffersize, 0, PCRE_NEWLINE_ANY, subStrings, 10);
 				
 				if (pcreExecRet < 0) {
 					// doesn't validate
+					logprint("The GET request is not valid.", 0);
+
 					catch_regex_error(pcreExecRet);
 					cacherequest = malloc(sizeof(char)*strlen("400")+1);
 					strcpy(cacherequest, "400");
@@ -328,33 +336,34 @@ void main() {
 						strcpy(cacherequest, "index");
 					}
 
-					printf("Request: '%s'\n", cacherequest);
+					logprint("Valid, requested resource:", 0);
+					logprint(cacherequest, 0);
 				}
 			} else {
+				logprint("Bad request.", 0);
 				cacherequest = malloc(sizeof(char)*strlen("400")+1);
 				strcpy(cacherequest, "400");
 			}
 
-			while (status = recv(new_fd, recv_buffer, 1, MSG_DONTWAIT) > 0) {
-				// ignore the rest of the request because we are very rude
-			}
-
+			logprint("Sending response.", 0);
 			send(new_fd, "HTTP/1.1 ", 9, 0);
 
 			// respond to request - what will we give them?
-
 			memset(&served_file, 0, sizeof(served_file));
 			served_file = storage[0]; // default to 404
 
 			for (i = 1; i < loaded_files; i++) {
 				if (strcmp(cacherequest, storage[i].alias) == 0 && storage[i].size > 0) {
 					served_file = storage[i];
+					logprint("Located requested resource in cache.", 0);
+					break;
 				}
 			}
 			free(cacherequest);
 			handle_request(new_fd, served_file);
 		}
 		close(new_fd);
+		logprint("Connection complete.", 0);
 	}
 	close(sockfd);
 
