@@ -19,9 +19,6 @@
 // Configuration
 #define LONGESTERRORMESSAGE 60 // in glibc-2.7 the longest error is 50 chars. I still don't like this.
 
-// Macros
-#define SEND(MESSAGE)  send(sockfd, MESSAGE, strlen(MESSAGE), 0)
-
 char *logfile;
 
 struct cached_file {
@@ -96,12 +93,9 @@ void catch_regex_error(int error_number) {
 }
 
 int handle_request(int sockfd, struct cached_file content) {
-	SEND(content.statuscode);
-	SEND("\nContent-Type: ");
-	SEND(content.contenttype);
-	SEND("\nContent-Length: ");
-	SEND(content.sizestring);
-	SEND("\n\n");
+	char buffer[512]; // FIXME hardcoded arbitrary buffer size
+	snprintf(buffer, 512, "HTTP/1.1 %s\nContent-Type: %s\nContent-Length: %s\n\n", content.statuscode, content.contenttype, content.sizestring);
+	send(sockfd, buffer, strlen(buffer), MSG_MORE);
 	send(sockfd, content.data, content.size, 0);
 }
 
@@ -180,8 +174,6 @@ void main() {
 
 			if (!config_setting_lookup_string(filedef, "contenttype", &contenttype))
 				contenttype = "text/plain";
-
-			//storage[i] = loadfile(path, alias);
 
 			storage[i].alias = malloc(sizeof(char)*strlen(alias)+1);
 			strcpy(storage[i].alias, alias);
@@ -346,7 +338,6 @@ void main() {
 			}
 
 			logprint("Sending response.", 0);
-			send(new_fd, "HTTP/1.1 ", 9, 0);
 
 			// respond to request - what will we give them?
 			memset(&served_file, 0, sizeof(served_file));
