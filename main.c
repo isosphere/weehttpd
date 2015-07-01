@@ -93,10 +93,32 @@ void catch_regex_error(int error_number) {
 }
 
 int handle_request(int sockfd, struct cached_file content) {
-	char buffer[512]; // FIXME hardcoded arbitrary buffer size
-	snprintf(buffer, 512, "HTTP/1.1 %s\nContent-Type: %s\nContent-Length: %s\n\n", content.statuscode, content.contenttype, content.sizestring);
-	send(sockfd, buffer, strlen(buffer), MSG_MORE);
-	send(sockfd, content.data, content.size, 0);
+	char buffer[1024]; // FIXME hardcoded arbitrary buffer size for header
+
+	unsigned int sent_bytes;
+	unsigned int total = 0;
+	unsigned int bytes_left = content.size;
+
+	printf("I have to send %u bytes of content.\n", content.size);
+
+	snprintf(buffer, 1024, "HTTP/1.1 %s\nContent-Type: %s\nContent-Length: %s\n\n", content.statuscode, content.contenttype, content.sizestring);
+	sent_bytes = send(sockfd, buffer, strlen(buffer), MSG_MORE);
+	printf("I wanted to send %u bytes of header, and I sent %u.\n", strlen(buffer), sent_bytes);
+
+	while (total < bytes_left) {
+		sent_bytes = send(sockfd, content.data+total, bytes_left, 0);
+		if (sent_bytes == -1) { 
+			printf("send() returned -1\n");
+			break; 
+		}
+
+		total      += sent_bytes;
+		bytes_left -= sent_bytes;
+	}
+	printf("I sent %u bytes of content. I had %u left to send.\n", total, bytes_left);
+
+	if (sent_bytes == -1)
+		logprint("socket error!", errno);
 }
 
 void main() {
@@ -219,10 +241,10 @@ void main() {
 	char *RequestMatchRegex;
 	int pcreErrorOffset;
 	int pcreExecRet;
-	int subStrings[10]; // FIXME arbitrary hardcoded value
+	int subStrings[6]; // FIXME arbitrary hardcoded value
 
 	// My implementation of request URIs is not to standard
-	RequestMatchRegex = "^GET /([a-zA-Z0-9.\\-_]*) HTTP/\\d\\.\\d$";
+	RequestMatchRegex = "^GET /([a-zA-Z0-9.\\-_]*) HTTP/1\\.[01]$";
 	reCompiled = pcre_compile(RequestMatchRegex, PCRE_MULTILINE, &pcreErrorStr, &pcreErrorOffset, NULL);
 	
 	if (reCompiled == NULL) {
@@ -306,14 +328,14 @@ void main() {
 
 				// "Validate" the request - our implementation is not standard,
 				// it's crippled
-				pcreExecRet = pcre_exec(reCompiled, pcreExtra, recv_buffer, buffersize, 0, PCRE_NEWLINE_ANY, subStrings, 10);
+				pcreExecRet = pcre_exec(reCompiled, pcreExtra, recv_buffer, buffersize, 0, PCRE_NEWLINE_ANY, subStrings, 6);
 				
 				if (pcreExecRet < 0) {
 					// doesn't validate
 					logprint("The GET request is not valid.", 0);
 
 					catch_regex_error(pcreExecRet);
-					cacherequest = malloc(sizeof(char)*strlen("400")+1);
+					cacherequest = malloc(sizeof(char)*3+1);
 					strcpy(cacherequest, "400");
 				} else {
 					pcre_get_substring(recv_buffer, subStrings, pcreExecRet, 1, &psubStrMatchStr);
@@ -324,7 +346,7 @@ void main() {
 
 					if (strcmp("", cacherequest) == 0) {
 						free(cacherequest);
-						cacherequest = malloc(sizeof(char)*strlen("index")+1);
+						cacherequest = malloc(sizeof(char)*5+1);
 						strcpy(cacherequest, "index");
 					}
 
@@ -333,7 +355,7 @@ void main() {
 				}
 			} else {
 				logprint("Bad request.", 0);
-				cacherequest = malloc(sizeof(char)*strlen("400")+1);
+				cacherequest = malloc(sizeof(char)*3+1);
 				strcpy(cacherequest, "400");
 			}
 
