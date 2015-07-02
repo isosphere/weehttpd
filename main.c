@@ -18,6 +18,7 @@
 
 // Configuration
 #define LONGESTERRORMESSAGE 60 // in glibc-2.7 the longest error is 50 chars. I still don't like this.
+#define MAXRECV 1024*4
 
 char *logfile;
 
@@ -99,23 +100,31 @@ int handle_request(int sockfd, struct cached_file content) {
 	unsigned int total = 0;
 	unsigned int bytes_left = content.size;
 
-	printf("I have to send %u bytes of content.\n", content.size);
-
-	snprintf(buffer, 1024, "HTTP/1.1 %s\nContent-Type: %s\nContent-Length: %s\n\n", content.statuscode, content.contenttype, content.sizestring);
+	snprintf(buffer, 1024, "HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %s\r\nConnection: close\r\n\r\n", content.statuscode, content.contenttype, content.sizestring);
 	sent_bytes = send(sockfd, buffer, strlen(buffer), MSG_MORE);
-	printf("I wanted to send %u bytes of header, and I sent %u.\n", strlen(buffer), sent_bytes);
+	if (sent_bytes == -1)
+		return -1;
+	total = sent_bytes;
+
+	while (total < strlen(buffer)) {
+		sent_bytes = send(sockfd, buffer+total, strlen(buffer) - total, 0); 
+		if (sent_bytes == -1)
+			break;
+
+		total += sent_bytes;
+	}
+
+	total = 0;
 
 	while (total < bytes_left) {
 		sent_bytes = send(sockfd, content.data+total, bytes_left, 0);
 		if (sent_bytes == -1) { 
-			printf("send() returned -1\n");
 			break; 
 		}
 
 		total      += sent_bytes;
 		bytes_left -= sent_bytes;
 	}
-	printf("I sent %u bytes of content. I had %u left to send.\n", total, bytes_left);
 
 	if (sent_bytes == -1)
 		logprint("socket error!", errno);
@@ -149,9 +158,9 @@ void main() {
 	struct addrinfo hints, *res;
 	int sockfd, new_fd;
 	char *recv_buffer;
+	unsigned int recv_bytes = 0;
 
 	char *listenport;
-	int buffersize;
 	int queue;
 
 	char *request;	  // The entire request from the user
@@ -174,7 +183,6 @@ void main() {
 	listenport = malloc(sizeof(char)*strlen(listenporttemp)+1);
 	strcpy(listenport, listenporttemp);
 
-	config_lookup_int(&cfg, "buffersize", &buffersize);
 	config_lookup_int(&cfg, "queue", &queue);
 
 	setting = config_lookup(&cfg, "files");
@@ -307,7 +315,7 @@ void main() {
 		logprint("Root privileges dropped.", 0);
 	}
 
-	recv_buffer = malloc(sizeof(char)*buffersize);
+	recv_buffer = malloc(sizeof(char)*MAXRECV);
 
 	// accept connection
 	while (program_status >= 1) {
@@ -315,8 +323,21 @@ void main() {
 		new_fd = accept(sockfd, (struct sockaddr *) &remote_address, &addr_size);
 
 		// interpret request - what do they want?
-		memset(recv_buffer, 0, buffersize);
-		status = recv(new_fd, recv_buffer, buffersize, 0);
+		memset(recv_buffer, 0, MAXRECV);
+		status = recv(new_fd, recv_buffer, MAXRECV, 0);
+		recv_bytes += status;
+
+		if (strncmp("\r\n\r\n", recv_buffer+status-4, 4) != 0) {
+			// Client isn't done sending data, and we aren't at the limit yet.
+			while (recv_bytes < MAXRECV && status > 0) {
+				status = recv(new_fd, recv_buffer + status, MAXRECV - status, 0);
+				recv_bytes += status;
+			}
+
+			if (status > 0 && recv_bytes > MAXRECV) {
+				logprint("Client exceeded maximum header size.\n", 0);
+			}
+		} 
 
 		if (status < 0) {
 			logprint("Socket error, closing socket.", errno);
@@ -328,7 +349,7 @@ void main() {
 
 				// "Validate" the request - our implementation is not standard,
 				// it's crippled
-				pcreExecRet = pcre_exec(reCompiled, pcreExtra, recv_buffer, buffersize, 0, PCRE_NEWLINE_ANY, subStrings, 6);
+				pcreExecRet = pcre_exec(reCompiled, pcreExtra, recv_buffer, MAXRECV, 0, PCRE_NEWLINE_ANY, subStrings, 6);
 				
 				if (pcreExecRet < 0) {
 					// doesn't validate
