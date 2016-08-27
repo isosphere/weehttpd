@@ -126,8 +126,12 @@ int handle_request(int sockfd, struct cached_file content) {
 		bytes_left -= sent_bytes;
 	}
 
-	if (sent_bytes == -1)
+	if (sent_bytes == -1) {
 		logprint("socket error!", errno);
+		return -1;
+	}
+	
+	return 0;
 }
 
 void main() {
@@ -394,7 +398,10 @@ void main() {
 				}
 			}
 			free(cacherequest);
-			handle_request(new_fd, served_file);
+			status = handle_request(new_fd, served_file);
+			if (status != 0) {
+				logprint("handle_request returned error", 0);
+			}
 		}
 		close(new_fd);
 		logprint("Connection complete.", 0);
